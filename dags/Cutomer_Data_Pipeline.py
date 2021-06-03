@@ -20,6 +20,7 @@ default_args = {
 
 loadId = uuid.uuid4()
 
+
 ## SQL script for table in the STAGING area
 _sql_create_table = '''CREATE OR REPLACE TABLE "AIRFLOW_DBT_POC"."STAGING"."users"(
                                                 firstname NVARCHAR(255)
@@ -61,6 +62,7 @@ def _user_processing(ti):
         if not len(users) or 'results' not in users[0]:
             raise ValueError('User is empty')
 
+
         user = users[0]['results'][0]    
         processed_user = pandas.json_normalize({
             'firstname':user['name']['first'],
@@ -88,15 +90,17 @@ def _user_processing(ti):
                                         processed_user['email'][0],
                                         processed_user['loadid'][0]
                                         )
+
     insert_users_sql = insert_users_sql[:-1] + ';'  
 
     ## put the created SQL statement to the XCOM                                  
     return(insert_users_sql)
 
 
- ## upload user data to Snowflake       
+## upload user data to Snowflake       
 def _upload_users_to_snowflake(ti):
     ## get the SQL statement for all Customers from XCOM
+
     insert_sql = ti.xcom_pull(task_ids=['process-users'])
 
     snowflake_ins = SnowflakeOperator(
@@ -148,6 +152,7 @@ with DAG('User_Data_Pipeline',
         retry_delay=3 
     )
 
+
     ## get data from the source 2
     get_user_from_own_CRM = SimpleHttpOperator(
         task_id='get-user-from-own-CRM',
@@ -167,6 +172,7 @@ with DAG('User_Data_Pipeline',
         response_filter=lambda response: json.loads(response.text),
         log_response=True 
     )
+
 
     ## get data from the source 4
     get_user_from_Filiale1_CRM = SimpleHttpOperator(
@@ -198,6 +204,7 @@ with DAG('User_Data_Pipeline',
         log_response=True 
     )
 
+
     ## collect data and create SQL statement for Snowflake
     process_users=PythonOperator(
         task_id='process-users',
@@ -226,13 +233,13 @@ with DAG('User_Data_Pipeline',
         command='cd C:\\DBT\\dbt-snowflake-poc\\models && dbt run -m DV_Core'
     )
 
+
     ## run dbt scripts for SATs
     run_dbt_snapshot = SSHOperator(
         ssh_conn_id='dbt_ssh',
         task_id='run-DBT-Snapshot',
         command='cd C:\\DBT\\dbt-snowflake-poc\\models && dbt snapshot --select tag:sattelite'
     )
-
 
     create_table >>[get_user_from_own_ERP, get_user_from_own_CRM, get_user_from_Filiale1_ERP, get_user_from_Filiale1_CRM, get_user_from_Filiale2_ERP, get_user_from_Filiale2_CRM] >> process_users 
     process_users >> upload_users_to_snowflake_stg >> fetch_dbt_model >> [run_dbt_model, run_dbt_snapshot]
